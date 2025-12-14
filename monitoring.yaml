@@ -74,7 +74,233 @@ data:
 
 ---
 
-# 2️⃣ PersistentVolumeClaim for Grafana
+# 2️⃣ Grafana Datasource ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+  namespace: devops
+data:
+  prometheus.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-service.devops.svc.cluster.local:9090
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: "15s"
+          httpMethod: "POST"
+
+---
+# 3️⃣ Grafana Dashboard Provisioning ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provisioning
+  namespace: devops
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+
+---
+# 4️⃣ Grafana Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard
+  namespace: devops
+  labels:
+    grafana_dashboard: "1"
+data:
+  devops-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "DevOps Student Management - Monitoring Dashboard",
+        "tags": ["devops", "spring", "jenkins", "kubernetes"],
+        "timezone": "browser",
+        "schemaVersion": 27,
+        "version": 1,
+        "refresh": "10s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Spring Boot - HTTP Requests Rate",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+            "targets": [
+              {
+                "expr": "rate(http_server_requests_seconds_count{application=\"student-management\"}[5m])",
+                "legendFormat": "{{method}} {{uri}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {"format": "reqps", "label": "Requests/sec"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 2,
+            "title": "Spring Boot - JVM Memory Usage",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+            "targets": [
+              {
+                "expr": "jvm_memory_used_bytes{application=\"student-management\"}",
+                "legendFormat": "{{area}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {"format": "bytes", "label": "Memory"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Ubuntu Host - CPU Usage",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+            "targets": [
+              {
+                "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+                "legendFormat": "CPU Usage %",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {"format": "percent", "min": 0, "max": 100, "label": "CPU %"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Ubuntu Host - Memory Usage",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+            "targets": [
+              {
+                "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+                "legendFormat": "Memory Usage %",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {"format": "percent", "min": 0, "max": 100, "label": "Memory %"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 5,
+            "title": "Ubuntu Host - Disk Usage",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+            "targets": [
+              {
+                "expr": "100 - ((node_filesystem_avail_bytes{mountpoint=\"/\"} * 100) / node_filesystem_size_bytes{mountpoint=\"/\"})",
+                "legendFormat": "Disk Usage %",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [
+              {"format": "percent", "min": 0, "max": 100, "label": "Disk %"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 6,
+            "title": "Spring Boot - Active Threads",
+            "type": "stat",
+            "gridPos": {"h": 4, "w": 6, "x": 0, "y": 24},
+            "targets": [
+              {
+                "expr": "tomcat_threads_current{application=\"student-management\"}",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "reduceOptions": {
+                "values": false,
+                "calcs": ["lastNotNull"],
+                "fields": ""
+              }
+            }
+          },
+          {
+            "id": 7,
+            "title": "Spring Boot - Response Time (p95)",
+            "type": "stat",
+            "gridPos": {"h": 4, "w": 6, "x": 6, "y": 24},
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{application=\"student-management\"}[5m]))",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "colorMode": "value",
+              "graphMode": "area",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "reduceOptions": {
+                "values": false,
+                "calcs": ["lastNotNull"],
+                "fields": ""
+              }
+            }
+          },
+          {
+            "id": 8,
+            "title": "Spring Boot - Error Rate",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+            "targets": [
+              {
+                "expr": "rate(http_server_requests_seconds_count{application=\"student-management\",status=~\"5..\"}[5m])",
+                "legendFormat": "5xx Errors",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(http_server_requests_seconds_count{application=\"student-management\",status=~\"4..\"}[5m])",
+                "legendFormat": "4xx Errors",
+                "refId": "B"
+              }
+            ],
+            "yaxes": [
+              {"format": "reqps", "label": "Error Rate"},
+              {"format": "short"}
+            ]
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "timepicker": {
+          "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+        }
+      }
+    }
+
+---
+# 5️⃣ PersistentVolumeClaim for Grafana
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -89,7 +315,7 @@ spec:
 
 ---
 
-# 3️⃣ Monitoring Deployment (Prometheus + Grafana)
+# 6️⃣ Monitoring Deployment (Prometheus + Grafana)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -123,9 +349,19 @@ spec:
           env:
             - name: GF_SECURITY_ADMIN_PASSWORD
               value: "admin"
+            - name: GF_INSTALL_PLUGINS
+              value: ""
+            - name: GF_PATHS_PROVISIONING
+              value: "/etc/grafana/provisioning"
           volumeMounts:
             - name: grafana-storage
               mountPath: /var/lib/grafana
+            - name: grafana-datasource
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: grafana-dashboard-provisioning
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: grafana-dashboard
+              mountPath: /var/lib/grafana/dashboards
 
       volumes:
         - name: prometheus-config-volume
@@ -134,10 +370,19 @@ spec:
         - name: grafana-storage
           persistentVolumeClaim:
             claimName: grafana-pvc
+        - name: grafana-datasource
+          configMap:
+            name: grafana-datasource
+        - name: grafana-dashboard-provisioning
+          configMap:
+            name: grafana-dashboard-provisioning
+        - name: grafana-dashboard
+          configMap:
+            name: grafana-dashboard
 
 ---
 
-# 4️⃣ Service for Prometheus
+# 7️⃣ Service for Prometheus
 apiVersion: v1
 kind: Service
 metadata:
@@ -154,7 +399,7 @@ spec:
 
 ---
 
-# 5️⃣ Service for Grafana
+# 8️⃣ Service for Grafana
 apiVersion: v1
 kind: Service
 metadata:

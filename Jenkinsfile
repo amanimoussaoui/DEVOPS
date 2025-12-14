@@ -34,14 +34,17 @@ pipeline {
 
         stage('TEST'){
             steps {
-                 sh "mvn clean test"
-                 sh "mvn jacoco:report"
+                 // Run tests and generate JaCoCo report in one command
+                 sh "mvn test jacoco:report"
+                 // Archive test results
+                 junit 'target/surefire-reports/*.xml'
             }
         }
 
         stage('PACKAGE'){
             steps {
-               sh "mvn package"
+               // Package without running tests again (skip tests since we already ran them)
+               sh "mvn package -DskipTests"
             }
         }
 
