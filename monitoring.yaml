@@ -1,0 +1,170 @@
+# 1️⃣ Prometheus ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: devops
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'devops-cluster'
+        environment: 'dev'
+    
+    scrape_configs:
+      # Spring Boot Application Metrics (via Actuator)
+      - job_name: 'spring-app'
+        metrics_path: '/student/actuator/prometheus'
+        static_configs:
+          - targets: ['spring-service.devops.svc.cluster.local:8089']
+            labels:
+              application: 'student-management'
+              component: 'backend'
+        scrape_interval: 10s
+        
+      # Node Exporter for Ubuntu Host Metrics
+      - job_name: 'node-exporter'
+        static_configs:
+          - targets: ['192.168.49.1:9100']
+            labels:
+              instance: 'ubuntu-host'
+              component: 'infrastructure'
+        scrape_interval: 15s
+        
+      # Jenkins Metrics (requires Jenkins Prometheus Plugin)
+      - job_name: 'jenkins'
+        metrics_path: '/prometheus'
+        static_configs:
+          - targets: ['192.168.49.1:8080']
+            labels:
+              component: 'ci-cd'
+              tool: 'jenkins'
+        scrape_interval: 30s
+        
+      # Kubernetes Metrics
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - devops
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+---
+
+# 2️⃣ PersistentVolumeClaim for Grafana
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-pvc
+  namespace: devops
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+# 3️⃣ Monitoring Deployment (Prometheus + Grafana)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring
+  namespace: devops
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitoring
+  template:
+    metadata:
+      labels:
+        app: monitoring
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:latest
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: prometheus-config-volume
+              mountPath: /etc/prometheus
+
+        - name: grafana
+          image: grafana/grafana:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "admin"
+          volumeMounts:
+            - name: grafana-storage
+              mountPath: /var/lib/grafana
+
+      volumes:
+        - name: prometheus-config-volume
+          configMap:
+            name: prometheus-config
+        - name: grafana-storage
+          persistentVolumeClaim:
+            claimName: grafana-pvc
+
+---
+
+# 4️⃣ Service for Prometheus
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+  namespace: devops
+spec:
+  selector:
+    app: monitoring
+  ports:
+    - port: 9090
+      targetPort: 9090
+      nodePort: 30900
+  type: NodePort
+
+---
+
+# 5️⃣ Service for Grafana
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+  namespace: devops
+spec:
+  selector:
+    app: monitoring
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30700
+  type: NodePort
